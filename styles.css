@@ -1,0 +1,152 @@
+/* Existing Toast Notification */
+#yt-pin-toast {
+    position: fixed;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: "Roboto", Arial, sans-serif;
+    font-size: 16px;
+    font-weight: 500;
+    z-index: 999999;
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+    pointer-events: none;
+}
+
+#yt-pin-toast.show {
+    opacity: 1;
+}
+
+/* --- NEW: Timeline Markers --- */
+.yt-pin-marker {
+    position: absolute;
+    bottom: 0;
+    width: 4px;
+    height: 100%;
+    background-color: #ffcc00;
+    z-index: 40; /* Places it above the red progress bar */
+    transform: translateX(-50%);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.yt-pin-marker:hover {
+    transform: translateX(-50%) scaleY(1.5);
+    background-color: #fff;
+}
+
+/* Adds a tiny number tag above the marker */
+.yt-pin-marker::after {
+    content: attr(data-key);
+    position: absolute;
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: #ffcc00;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 5px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.yt-pin-marker:hover::after {
+    opacity: 1;
+}
+
+/* --- NEW: Pin Display Panel --- */
+#yt-pin-panel {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(28, 28, 28, 0.9);
+    color: #fff;
+    padding: 12px;
+    border-radius: 8px;
+    z-index: 9999;
+    font-family: "Roboto", Arial, sans-serif;
+    min-width: 120px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(4px);
+}
+
+.yt-pin-header {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 5px;
+    color: #ffcc00;
+}
+
+.yt-pin-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.yt-pin-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    padding: 6px 0;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.yt-pin-item strong {
+    background: #333;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 10px;
+}
+
+.yt-pin-item .time {
+    opacity: 0.8;
+}
+
+.yt-pin-item:hover {
+    color: #ffcc00;
+}
+
+.yt-pin-item:hover strong {
+    background: #555;
+}
+
+/* --- NEW: Repeat Button Styling --- */
+.yt-pin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#yt-pin-repeat-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+#yt-pin-repeat-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#yt-pin-repeat-btn.active {
+    background: rgba(255, 204, 0, 0.2);
+    color: #ffcc00;
+    font-weight: bold;
+}
