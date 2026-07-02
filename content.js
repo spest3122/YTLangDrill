@@ -138,20 +138,37 @@ function renderPanel() {
 
     panel.style.display = "block";
 
+    // Added a container for the buttons and the new Clear button
     panel.innerHTML = `
     <div class="yt-pin-header">
       <span>📍 Pinned Locations</span>
-      <button id="yt-pin-repeat-btn" class="${isRepeatEnabled ? "active" : ""}">
-        🔁 Repeat: ${isRepeatEnabled ? "ON" : "OFF"}
-      </button>
+      <div class="yt-pin-actions">
+        <button id="yt-pin-repeat-btn" class="${isRepeatEnabled ? "active" : ""}">
+          🔁 ${isRepeatEnabled ? "ON" : "OFF"}
+        </button>
+        <button id="yt-pin-clear-btn">
+          🗑️ Clear
+        </button>
+      </div>
     </div>
   `;
 
+    // Repeat Button Listener
     document.getElementById("yt-pin-repeat-btn").addEventListener("click", (e) => {
         isRepeatEnabled = !isRepeatEnabled;
-        e.target.innerText = `🔁 Repeat: ${isRepeatEnabled ? "ON" : "OFF"}`;
+        e.target.innerText = `🔁 ${isRepeatEnabled ? "ON" : "OFF"}`;
         e.target.className = isRepeatEnabled ? "active" : "";
         showToast(`Repeat turned ${isRepeatEnabled ? "ON" : "OFF"}`);
+        updateUI(); // Re-render to hide panel if repeat is off and no pins exist
+    });
+
+    // NEW: Clear Button Listener
+    document.getElementById("yt-pin-clear-btn").addEventListener("click", () => {
+        pins = {};
+        chrome.storage.local.remove([currentVideoId], () => {
+            showToast("All pins cleared");
+            updateUI(); // Instantly removes timeline markers and updates the panel
+        });
     });
 
     const list = document.createElement("ul");
@@ -187,8 +204,37 @@ document.addEventListener(
     "keydown",
     (e) => {
         const target = e.target.tagName;
+        // Ignore keystrokes if the user is typing in a search box or comment field
         if (target === "INPUT" || target === "TEXTAREA" || e.target.isContentEditable) return;
 
+        const video = document.querySelector("video");
+        if (!video) return;
+
+        // --- Clear All Pins Shortcut (Shift + C) ---
+        if (e.shiftKey && e.code === "KeyC") {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            pins = {};
+            chrome.storage.local.remove([currentVideoId], () => {
+                showToast("All pins cleared");
+                updateUI(); // Instantly removes timeline markers and updates the panel
+            });
+            return; // Exit here
+        }
+
+        // --- NEW: Toggle Repeat Shortcut (Shift + R) ---
+        if (e.shiftKey && e.code === "KeyR") {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+
+            isRepeatEnabled = !isRepeatEnabled;
+            showToast(`Repeat turned ${isRepeatEnabled ? "ON" : "OFF"}`);
+            updateUI(); // Updates the UI panel button state
+            return; // Exit here
+        }
+
+        // Identify the physical key pressed for numbers
         let numKey = null;
         if (e.code && e.code.startsWith("Digit")) {
             numKey = e.code.replace("Digit", "");
@@ -196,10 +242,8 @@ document.addEventListener(
             numKey = e.code.replace("Numpad", "");
         }
 
+        // If the key wasn't a number key, do nothing
         if (!numKey) return;
-
-        const video = document.querySelector("video");
-        if (!video) return;
 
         if (e.shiftKey) {
             // SET A PIN

@@ -85,6 +85,44 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.2);
     padding-bottom: 5px;
     color: #ffcc00;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+}
+
+.yt-pin-actions {
+    display: flex;
+    gap: 5px;
+}
+
+#yt-pin-repeat-btn,
+#yt-pin-clear-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.2s ease;
+}
+
+#yt-pin-repeat-btn:hover,
+#yt-pin-clear-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#yt-pin-repeat-btn.active {
+    background: rgba(255, 204, 0, 0.2);
+    color: #ffcc00;
+    font-weight: bold;
+}
+
+#yt-pin-clear-btn:hover {
+    background: rgba(255, 50, 50, 0.3);
+    color: #ffaaaa;
 }
 
 .yt-pin-list {
