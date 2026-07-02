@@ -3,20 +3,32 @@ let pins = {};
 let isRepeatEnabled = false;
 let lastTime = 0;
 let videoElement = null;
-let jumpCooldown = 0; // NEW: Tracks the cooldown time to prevent double-jumping
+let jumpCooldown = 0;
 
 // Get the unique YouTube video ID from the URL
 function getVideoId() {
     return new URLSearchParams(window.location.search).get("v");
 }
 
-// Load pins from Chrome storage when a video loads
+// Load pins from Chrome storage and migrate old data if needed
 function loadPins() {
     currentVideoId = getVideoId();
     if (!currentVideoId) return;
 
     chrome.storage.local.get([currentVideoId], (result) => {
-        pins = result[currentVideoId] || {};
+        const rawPins = result[currentVideoId] || {};
+        pins = {};
+
+        // Data Migration
+        for (const key in rawPins) {
+            if (typeof rawPins[key] === "number") {
+                pins[key] = { time: rawPins[key], skip: false };
+            } else {
+                pins[key] = rawPins[key];
+            }
+        }
+
+        chrome.storage.local.set({ [currentVideoId]: pins });
         updateUI();
     });
 }
@@ -30,7 +42,7 @@ function formatTime(seconds) {
     return `${m}:${s}`;
 }
 
-// --- The Looping Engine ---
+// --- The Unified Video Engine (Handles Repeat & Skip Together) ---
 function setupVideoListener(video) {
     if (video !== videoElement) {
         if (videoElement) {
@@ -45,40 +57,50 @@ function handleTimeUpdate(e) {
     const video = e.target;
     const currentTime = video.currentTime;
 
-    if (!isRepeatEnabled) {
-        lastTime = currentTime;
-        return;
-    }
-
-    // Detect manual seek from the user
+    // 1. Detect manual seek from the user
     if (Math.abs(currentTime - lastTime) > 1.5) {
         lastTime = currentTime;
         return;
     }
 
-    // NEW: Cooldown check. If we just jumped, ignore boundaries for 1 second
-    // This prevents keyframe snapping from triggering a double-jump.
+    // 2. Cooldown check to prevent double-jumping from browser keyframes
     if (Date.now() < jumpCooldown) {
         lastTime = currentTime;
         return;
     }
 
-    const pinTimes = Object.values(pins);
-    let boundaries = [0, ...pinTimes, video.duration - 0.5];
-
-    // Remove duplicates and sort chronologically
-    boundaries = [...new Set(boundaries)].sort((a, b) => a - b);
+    // 3. Define all boundaries: Start (0) + sorted pins + End of video
+    const sortedPins = Object.values(pins).sort((a, b) => a.time - b.time);
+    const boundaries = [
+        { time: 0, skip: false },
+        ...sortedPins,
+        { time: video.duration - 0.5, skip: false },
+    ];
 
     for (let i = 0; i < boundaries.length - 1; i++) {
         const start = boundaries[i];
         const end = boundaries[i + 1];
 
-        if (lastTime >= start && lastTime < end && currentTime >= end) {
-            video.currentTime = start;
-            lastTime = start;
-            jumpCooldown = Date.now() + 1000; // NEW: Set a 1-second cooldown after a jump
-            showToast(`🔁 Looping segment`);
-            return;
+        // --- SKIP LOGIC ---
+        // If the playhead is currently inside a segment that is marked to be skipped
+        if (currentTime >= start.time && currentTime < end.time && end.skip) {
+            video.currentTime = end.time;
+            lastTime = end.time;
+            jumpCooldown = Date.now() + 1000;
+            showToast(`⏭️ Skipped segment`);
+            return; // Exit out so we don't process repeat on the same tick
+        }
+
+        // --- REPEAT LOGIC ---
+        // If Repeat is ON, and we just crossed the end of a segment
+        if (isRepeatEnabled) {
+            if (lastTime >= start.time && lastTime < end.time && currentTime >= end.time) {
+                video.currentTime = start.time;
+                lastTime = start.time;
+                jumpCooldown = Date.now() + 1000;
+                showToast(`🔁 Looping segment`);
+                return;
+            }
         }
     }
 
@@ -104,17 +126,22 @@ function renderMarkers(video) {
 
     document.querySelectorAll(".yt-pin-marker").forEach((el) => el.remove());
 
-    for (const [key, time] of Object.entries(pins)) {
-        const percent = (time / video.duration) * 100;
+    for (const [key, pinData] of Object.entries(pins)) {
+        const percent = (pinData.time / video.duration) * 100;
 
         const marker = document.createElement("div");
         marker.className = "yt-pin-marker";
         marker.style.left = `${percent}%`;
         marker.setAttribute("data-key", key);
 
+        // UI Update: Red marker applies to skip even if repeat is ON
+        if (pinData.skip) {
+            marker.classList.add("skipped");
+        }
+
         marker.addEventListener("click", (e) => {
             e.stopPropagation();
-            video.currentTime = time;
+            video.currentTime = pinData.time;
         });
 
         progressList.appendChild(marker);
@@ -138,7 +165,6 @@ function renderPanel() {
 
     panel.style.display = "block";
 
-    // Added a container for the buttons and the new Clear button
     panel.innerHTML = `
     <div class="yt-pin-header">
       <span>📍 Pinned Locations</span>
@@ -146,45 +172,58 @@ function renderPanel() {
         <button id="yt-pin-repeat-btn" class="${isRepeatEnabled ? "active" : ""}">
           🔁 ${isRepeatEnabled ? "ON" : "OFF"}
         </button>
-        <button id="yt-pin-clear-btn">
-          🗑️ Clear
-        </button>
+        <button id="yt-pin-clear-btn">🗑️ Clear</button>
       </div>
     </div>
   `;
 
-    // Repeat Button Listener
     document.getElementById("yt-pin-repeat-btn").addEventListener("click", (e) => {
         isRepeatEnabled = !isRepeatEnabled;
         e.target.innerText = `🔁 ${isRepeatEnabled ? "ON" : "OFF"}`;
         e.target.className = isRepeatEnabled ? "active" : "";
         showToast(`Repeat turned ${isRepeatEnabled ? "ON" : "OFF"}`);
-        updateUI(); // Re-render to hide panel if repeat is off and no pins exist
+        updateUI();
     });
 
-    // NEW: Clear Button Listener
     document.getElementById("yt-pin-clear-btn").addEventListener("click", () => {
         pins = {};
         chrome.storage.local.remove([currentVideoId], () => {
             showToast("All pins cleared");
-            updateUI(); // Instantly removes timeline markers and updates the panel
+            updateUI();
         });
     });
 
     const list = document.createElement("ul");
     list.className = "yt-pin-list";
 
-    const sortedPins = Object.entries(pins).sort((a, b) => a[1] - b[1]);
+    const sortedPins = Object.entries(pins).sort((a, b) => a[1].time - b[1].time);
 
-    for (const [key, time] of sortedPins) {
+    for (const [key, pinData] of sortedPins) {
         const item = document.createElement("li");
-        const formattedTime = formatTime(time);
         item.className = "yt-pin-item";
-        item.innerHTML = `<strong>${key}</strong> <span class="time">${formattedTime}</span>`;
+
+        const leftSide = document.createElement("div");
+        leftSide.className = "yt-pin-item-left";
+        leftSide.innerHTML = `<strong>${key}</strong> <span class="time">${formatTime(pinData.time)}</span>`;
+
+        const skipBtn = document.createElement("button");
+        skipBtn.className = `yt-pin-skip-btn ${pinData.skip ? "active" : ""}`;
+        skipBtn.innerText = "⏭️ Skip";
+
+        skipBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            pins[key].skip = !pins[key].skip;
+            chrome.storage.local.set({ [currentVideoId]: pins }, () => {
+                updateUI();
+            });
+        });
+
+        item.appendChild(leftSide);
+        item.appendChild(skipBtn);
 
         item.addEventListener("click", () => {
             if (videoElement) {
-                videoElement.currentTime = time;
+                videoElement.currentTime = pinData.time;
                 showToast(`Jumped to Pin ${key}`);
             }
         });
@@ -204,37 +243,31 @@ document.addEventListener(
     "keydown",
     (e) => {
         const target = e.target.tagName;
-        // Ignore keystrokes if the user is typing in a search box or comment field
         if (target === "INPUT" || target === "TEXTAREA" || e.target.isContentEditable) return;
 
         const video = document.querySelector("video");
         if (!video) return;
 
-        // --- Clear All Pins Shortcut (Shift + C) ---
         if (e.shiftKey && e.code === "KeyC") {
             e.preventDefault();
             e.stopImmediatePropagation();
-
             pins = {};
             chrome.storage.local.remove([currentVideoId], () => {
                 showToast("All pins cleared");
-                updateUI(); // Instantly removes timeline markers and updates the panel
+                updateUI();
             });
-            return; // Exit here
+            return;
         }
 
-        // --- NEW: Toggle Repeat Shortcut (Shift + R) ---
         if (e.shiftKey && e.code === "KeyR") {
             e.preventDefault();
             e.stopImmediatePropagation();
-
             isRepeatEnabled = !isRepeatEnabled;
             showToast(`Repeat turned ${isRepeatEnabled ? "ON" : "OFF"}`);
-            updateUI(); // Updates the UI panel button state
-            return; // Exit here
+            updateUI();
+            return;
         }
 
-        // Identify the physical key pressed for numbers
         let numKey = null;
         if (e.code && e.code.startsWith("Digit")) {
             numKey = e.code.replace("Digit", "");
@@ -242,27 +275,22 @@ document.addEventListener(
             numKey = e.code.replace("Numpad", "");
         }
 
-        // If the key wasn't a number key, do nothing
         if (!numKey) return;
 
         if (e.shiftKey) {
-            // SET A PIN
             e.preventDefault();
             e.stopImmediatePropagation();
-
-            pins[numKey] = video.currentTime;
+            pins[numKey] = { time: video.currentTime, skip: false };
 
             chrome.storage.local.set({ [currentVideoId]: pins }, () => {
                 showToast(`Pin ${numKey} set at ${formatTime(video.currentTime)}`);
                 updateUI();
             });
         } else if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-            // JUMP TO A PIN
             if (pins[numKey] !== undefined) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-
-                video.currentTime = pins[numKey];
+                video.currentTime = pins[numKey].time;
                 showToast(`Jumped to Pin ${numKey}`);
             }
         }
@@ -270,7 +298,6 @@ document.addEventListener(
     true,
 );
 
-// --- UI Feedback (Toast Notification) ---
 function showToast(message) {
     let toast = document.getElementById("yt-pin-toast");
     if (!toast) {
@@ -278,10 +305,8 @@ function showToast(message) {
         toast.id = "yt-pin-toast";
         document.body.appendChild(toast);
     }
-
     toast.innerText = message;
     toast.classList.add("show");
-
     clearTimeout(toast.hideTimeout);
     toast.hideTimeout = setTimeout(() => {
         toast.classList.remove("show");

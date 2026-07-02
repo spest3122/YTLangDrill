@@ -188,3 +188,51 @@
     color: #ffcc00;
     font-weight: bold;
 }
+
+/* --- NEW: Skip Button Styling & Layout --- */
+.yt-pin-item {
+    display: flex;
+    justify-content: space-between; /* Pushes the left side and skip button apart */
+    align-items: center;
+    font-size: 13px;
+    padding: 6px 0;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.yt-pin-item-left {
+    display: flex;
+    align-items: center;
+}
+
+.yt-pin-skip-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #aaa;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.yt-pin-skip-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.yt-pin-skip-btn.active {
+    background: rgba(255, 50, 50, 0.2);
+    color: #ff5555;
+    border-color: #ff5555;
+    font-weight: bold;
+}
+
+/* Optional: Make timeline markers turn red if they indicate a skipped segment */
+.yt-pin-marker.skipped {
+    background-color: #ff5555;
+}
+.yt-pin-marker.skipped::after {
+    color: #ff5555;
+}
