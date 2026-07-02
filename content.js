@@ -11,45 +11,84 @@ function getVideoId() {
     return new URLSearchParams(window.location.search).get("v");
 }
 
+// NEW: Safety check to see if the extension was reloaded in the background
+function isExtensionValid() {
+    return typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id;
+}
+
 function loadPins() {
     currentVideoId = getVideoId();
     if (!currentVideoId) return;
 
-    chrome.storage.local.get([currentVideoId], (result) => {
-        const data = result[currentVideoId] || {};
+    // Prevent "Extension context invalidated" error
+    if (!isExtensionValid()) {
+        console.warn("YouTube Pinner: Extension was updated. Please refresh the page.");
+        return;
+    }
 
-        if (data.pins) {
-            pins = data.pins;
-            loopA = data.loopA;
-            loopB = data.loopB;
-        } else {
-            pins = {};
-            for (const key in data) {
-                if (typeof data[key] === "number") {
-                    pins[key] = { time: data[key], skip: false };
-                } else {
-                    pins[key] = data[key];
+    try {
+        chrome.storage.local.get([currentVideoId], (result) => {
+            if (chrome.runtime.lastError) return; // Failsafe
+
+            const data = result[currentVideoId] || {};
+
+            if (data.pins) {
+                pins = data.pins;
+                loopA = data.loopA;
+                loopB = data.loopB;
+            } else {
+                pins = {};
+                for (const key in data) {
+                    if (typeof data[key] === "number") {
+                        pins[key] = { time: data[key], skip: false };
+                    } else {
+                        pins[key] = data[key];
+                    }
                 }
+                loopA = null;
+                loopB = null;
             }
-            loopA = null;
-            loopB = null;
-        }
 
-        saveData();
-        updateUI();
-    });
+            saveData();
+            updateUI();
+        });
+    } catch (e) {
+        console.warn("YouTube Pinner: Context invalidated.", e);
+    }
 }
 
 function saveData(callback) {
-    chrome.storage.local.set({ [currentVideoId]: { pins, loopA, loopB } }, callback);
+    if (!isExtensionValid()) return;
+    try {
+        chrome.storage.local.set({ [currentVideoId]: { pins, loopA, loopB } }, () => {
+            if (chrome.runtime.lastError) return;
+            if (callback) callback();
+        });
+    } catch (e) {
+        console.warn("YouTube Pinner: Context invalidated.", e);
+    }
 }
 
 function formatTime(seconds) {
-    const m = Math.floor(seconds / 60);
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60)
+        .toString()
+        .padStart(h > 0 ? 2 : 1, "0");
     const s = Math.floor(seconds % 60)
         .toString()
         .padStart(2, "0");
-    return `${m}:${s}`;
+    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
+function getTrueDuration(video) {
+    const player = document.getElementById("movie_player");
+    return player && player.getDuration && player.getDuration() > 0
+        ? player.getDuration()
+        : video.duration;
+}
+
+function getMainVideo() {
+    return document.querySelector("video.video-stream") || document.querySelector("video");
 }
 
 function setupVideoListener(video) {
@@ -62,10 +101,10 @@ function setupVideoListener(video) {
     }
 }
 
-// --- BUG FIX: Unified Engine ---
 function handleTimeUpdate(e) {
     const video = e.target;
     const currentTime = video.currentTime;
+    const trueDuration = getTrueDuration(video);
 
     if (Math.abs(currentTime - lastTime) > 1.5) {
         lastTime = currentTime;
@@ -77,12 +116,11 @@ function handleTimeUpdate(e) {
         return;
     }
 
-    // 1. --- SKIP LOGIC (Always Runs First) ---
     const sortedPins = Object.values(pins).sort((a, b) => a.time - b.time);
     const boundaries = [
         { time: 0, skip: false },
         ...sortedPins,
-        { time: video.duration - 0.5, skip: false },
+        { time: trueDuration - 0.5, skip: false },
     ];
 
     for (let i = 0; i < boundaries.length - 1; i++) {
@@ -94,14 +132,13 @@ function handleTimeUpdate(e) {
             lastTime = end.time;
             jumpCooldown = Date.now() + 1000;
             showToast(`⏭️ Skipped segment`);
-            return; // Exit out so we don't accidentally process a repeat jump in the exact same millisecond
+            return;
         }
     }
 
-    // 2. --- A-B REPEAT LOGIC (Runs Second) ---
     if (isRepeatEnabled) {
         let startBoundary = 0;
-        let endBoundary = video.duration || 999999;
+        let endBoundary = trueDuration || 999999;
 
         if (loopA && pins[loopA]) startBoundary = pins[loopA].time;
         if (loopB && pins[loopB]) endBoundary = pins[loopB].time;
@@ -124,25 +161,29 @@ function handleTimeUpdate(e) {
 }
 
 function updateUI() {
-    const video = document.querySelector("video");
-    if (!video || !video.duration) {
+    const video = getMainVideo();
+    const duration = getTrueDuration(video);
+
+    if (!video || !duration || isNaN(duration)) {
         setTimeout(updateUI, 500);
         return;
     }
 
     setupVideoListener(video);
-    renderMarkers(video);
+    renderMarkers(video, duration);
     renderPanel();
 }
 
-function renderMarkers(video) {
-    const progressList = document.querySelector(".ytp-progress-list");
-    if (!progressList) return;
+function renderMarkers(video, duration) {
+    const progressBar = document.querySelector(".ytp-progress-bar");
+    if (!progressBar) return;
 
     document.querySelectorAll(".yt-pin-marker").forEach((el) => el.remove());
 
     for (const [key, pinData] of Object.entries(pins)) {
-        const percent = (pinData.time / video.duration) * 100;
+        const percent = (pinData.time / duration) * 100;
+
+        if (isNaN(percent) || percent < 0 || percent > 100) continue;
 
         const marker = document.createElement("div");
         marker.className = "yt-pin-marker";
@@ -158,7 +199,7 @@ function renderMarkers(video) {
             video.currentTime = pinData.time;
         });
 
-        progressList.appendChild(marker);
+        progressBar.appendChild(marker);
     }
 }
 
@@ -201,10 +242,19 @@ function renderPanel() {
         pins = {};
         loopA = null;
         loopB = null;
-        chrome.storage.local.remove([currentVideoId], () => {
-            showToast("All pins cleared");
+        if (isExtensionValid()) {
+            try {
+                chrome.storage.local.remove([currentVideoId], () => {
+                    showToast("All pins cleared");
+                    updateUI();
+                });
+            } catch (e) {
+                showToast("All pins cleared");
+                updateUI();
+            }
+        } else {
             updateUI();
-        });
+        }
     });
 
     const list = document.createElement("ul");
@@ -269,8 +319,9 @@ function renderPanel() {
         item.appendChild(rightSide);
 
         item.addEventListener("click", () => {
-            if (videoElement) {
-                videoElement.currentTime = pinData.time;
+            const video = getMainVideo();
+            if (video) {
+                video.currentTime = pinData.time;
                 showToast(`Jumped to Pin ${key}`);
             }
         });
@@ -290,7 +341,7 @@ document.addEventListener(
         const target = e.target.tagName;
         if (target === "INPUT" || target === "TEXTAREA" || e.target.isContentEditable) return;
 
-        const video = document.querySelector("video");
+        const video = getMainVideo();
         if (!video) return;
 
         if (e.shiftKey && e.code === "KeyC") {
@@ -299,10 +350,15 @@ document.addEventListener(
             pins = {};
             loopA = null;
             loopB = null;
-            chrome.storage.local.remove([currentVideoId], () => {
-                showToast("All pins cleared");
+
+            if (isExtensionValid()) {
+                chrome.storage.local.remove([currentVideoId], () => {
+                    showToast("All pins cleared");
+                    updateUI();
+                });
+            } else {
                 updateUI();
-            });
+            }
             return;
         }
 
