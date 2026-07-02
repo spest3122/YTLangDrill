@@ -236,3 +236,48 @@
 .yt-pin-marker.skipped::after {
     color: #ff5555;
 }
+
+/* --- A-B Loop Controls Styling --- */
+.yt-pin-item-right {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.yt-pin-ab-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #aaa;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: inherit;
+    font-weight: bold;
+}
+
+.yt-pin-ab-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+/* Green highlight for Loop Start (A) */
+.yt-pin-ab-btn.active-a {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    border-color: #4caf50;
+}
+
+/* Blue highlight for Loop End (B) */
+.yt-pin-ab-btn.active-b {
+    background: rgba(33, 150, 243, 0.2);
+    color: #2196f3;
+    border-color: #2196f3;
+}
+
+/* Shrunk down Skip button to fit alongside A/B */
+.yt-pin-skip-btn {
+    padding: 3px 4px;
+    font-size: 10px;
+}
